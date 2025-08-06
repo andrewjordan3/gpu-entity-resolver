@@ -1,0 +1,98 @@
+import cupy
+from cupyx.scipy.sparse.linalg import svds
+
+class GPUTruncatedSVD:
+    """
+    A custom, scikit-learn-style wrapper for the GPU-accelerated `svds`
+    function, which is capable of operating directly on sparse matrices.
+
+    This class is a necessary replacement for `cuml.TruncatedSVD`, which
+    lacks support for sparse inputs. It performs the first, most significant
+    dimensionality reduction step in our feature streams.
+    """
+    def __init__(self, n_components: int = 256, **svds_kwargs):
+        """
+        Initializes the GPUTruncatedSVD transformer.
+
+        Args:
+            n_components: The target number of dimensions for the output.
+                          This is the 'k' in Truncated SVD.
+            **svds_kwargs: Additional keyword arguments to pass directly to the
+                           `cupyx.scipy.sparse.linalg.svds` function, such as
+                           'maxiter' or 'tol'.
+        """
+        self.n_components = n_components
+        self.svds_kwargs = svds_kwargs
+        
+        # This will store the V^T matrix from the SVD decomposition.
+        # It represents the principal axes (directions) in the original
+        # feature space. Shape: (n_components, n_features).
+        self.components_ = None
+        
+        # This will store the top 'k' singular values.
+        self.singular_values_ = None
+
+    def fit(self, sparse_matrix_csr: cupy.sparse.csr_matrix) -> 'GPUTruncatedSVD':
+        """
+        Computes the singular value decomposition on the input sparse matrix.
+
+        The core of this method is the call to `svds`, which returns the
+        three components of the decomposition: U, S, and V^T.
+
+        Args:
+            sparse_matrix_csr: The input data, as a CuPy CSR sparse matrix.
+        """
+        # Note: cupyx.scipy.sparse.linalg.svds uses the ARPACK solver,
+        # which is deterministic and does not use a random_state.
+        
+        # U: Unitary matrix having left singular vectors as columns.
+        # s: The singular values.
+        # V_transpose: Unitary matrix having right singular vectors as rows.
+        _, singular_values, V_transpose = svds(
+            sparse_matrix_csr,
+            k=self.n_components,
+            return_singular_vectors=True,
+            **self.svds_kwargs
+        )
+        
+        # The `svds` function does not guarantee the order of the singular
+        # values. We must sort them in descending order to ensure we are
+        # keeping the components that explain the most variance.
+        descending_order_indices = cupy.argsort(singular_values)[::-1]
+        
+        self.singular_values_ = singular_values[descending_order_indices]
+        self.components_ = V_transpose[descending_order_indices, :]
+        
+        return self
+
+    def fit_transform(self, sparse_matrix_csr: cupy.sparse.csr_matrix) -> cupy.ndarray:
+        """
+        Fits the model and then transforms the input data into the new,
+        lower-dimensional space.
+
+        Returns:
+            A dense CuPy array representing the transformed data.
+        """
+        self.fit(sparse_matrix_csr)
+        
+        # The transformation is a matrix multiplication: Z = X * V
+        # where X is the original data and V is the matrix of right singular
+        # vectors. Since we have V_transpose (self.components_), we must
+        # transpose it back to V for the multiplication.
+        transformed_dense_matrix = sparse_matrix_csr @ self.components_.T
+        
+        # Explicitly cast to float32 for robust compatibility with downstream
+        # cuML components like PCA.
+        return transformed_dense_matrix.astype(cupy.float32)
+
+    def transform(self, sparse_matrix_csr: cupy.sparse.csr_matrix) -> cupy.ndarray:
+        """
+        Transforms the input data using the already fitted model.
+        """
+        if self.components_ is None:
+            raise RuntimeError("GPUTruncatedSVD has not been fitted. Call fit() or fit_transform() first.")
+            
+        transformed_dense_matrix = sparse_matrix_csr @ self.components_.T
+
+        # Explicitly cast to float32 for robust compatibility.
+        return transformed_dense_matrix.astype(cupy.float32)
