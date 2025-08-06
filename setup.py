@@ -1,10 +1,10 @@
 from setuptools import setup, find_packages
 
-# Read the contents of your README file
+# Read the contents of the README file
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-# Read the contents of your requirements file
+# Read the contents of the requirements file
 with open("requirements.txt", "r", encoding="utf-8") as f:
     # Filter out comments and empty lines
     requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
@@ -17,12 +17,12 @@ setup(
     description='A high-performance, GPU-accelerated entity resolution pipeline.',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url='https://github.com/your_username/entity-resolver', # Optional: Replace with your GitHub repo URL
+    url='https://github.com/andrewjordan3/gpu-entity-resolver', 
     packages=find_packages(),
     install_requires=requirements,
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License", # You can choose another license if you prefer
+        "License :: OSI Approved :: MIT License", 
         "Operating System :: OS Independent",
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
@@ -30,3 +30,4 @@ setup(
     ],
     python_requires='>=3.8',
 )
+
